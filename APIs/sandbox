@@ -1,0 +1,554 @@
+if shell then pcall(shell.exit) end
+
+	local args={...}
+	local dir=args[1].."/"
+	local OS=args[2]
+	local filepath=args[3]
+	local urlinstaller=args[4]
+	local Disks
+	local oSides=rs.getSides
+	local pErr=printError
+	local oIP=ipairs
+	local oInsert=table.insert
+
+	if not fs.exists(".System/UserPerms/"..OS) then
+		local writeFirst=fs.open(".System/UserPerms/"..OS,"w")
+		writeFirst.write(textutils.serialize({}))
+		writeFirst.close()
+	end
+	local readPerms=fs.open(".System/UserPerms/"..OS,"r")
+	local Perms=textutils.unserialize(readPerms.readAll())
+	readPerms.close()
+
+
+	local firstTime=false
+
+	local oCombine=fs.combine
+	local oSub=string.sub
+	local oLen=string.len
+	local function queue(word)
+		for p=1,#word do
+			os.queueEvent("char",word:sub(p,p))
+		end
+		os.queueEvent("key",keys.enter)
+	end
+
+	local function activateInstaller(filepath)
+		if filepath then
+			shell.run(filepath)
+		end
+	end
+
+
+	sandbox=nil
+ local printStuff=false --Change to see printed stuff or not.
+
+--Backup FS declaration...
+local oFs={}
+for k, v in pairs(fs) do
+	oFs[k]=v
+end
+
+--Backup peripherals declaration...
+local oldP={}
+for k,v in pairs(peripheral) do
+	oldP[k]=v
+end
+--Backup others declaration...
+local oldDfile=dofile
+local oldLfile=loadfile
+local err = error
+local oldReboot=os.reboot
+local oldShutdown=os.shutdown
+local oMountPath=disk.getMountPath
+local oPresent=disk.isPresent
+
+
+local oldsenv=setfenv
+local oldmeta=setmetatable
+local orset=rawset
+local bPair=pairs
+
+local function centerPrint(text, ny)
+	if type(text) == "table" then for _, v in pairs(text) do centerPrint(v) end
+else
+	local x, y = term.getCursorPos()
+	local w, h = term.getSize()
+	term.setCursorPos(w/2 - text:len()/2, ny or y)
+	print(text)
+end
+end
+
+local function centerWrite(text, ny)
+	if type(text) == "table" then for _, v in pairs(text) do centerWrite(v) end
+else
+	local x, y = term.getCursorPos()
+	local w, h = term.getSize()
+	term.setCursorPos(w/2 - text:len()/2, ny or y)
+	write(text)
+end
+end
+
+local function md(d)
+	os.queueEvent(" ")
+	os.pullEventRaw()
+	return fs.makeDir(dir.."/"..d)
+end
+
+local function cp(f,ftwo)
+	ftwo=ftwo or dir.."/"..f
+	os.queueEvent(" ")
+	os.pullEventRaw()
+	return pcall(fs.copy,f,ftwo)
+end
+
+local function clear()
+	term.clear()
+	term.setCursorPos(1,1)
+end
+
+local function sandbox(directory)
+	local sandboxed = directory
+
+	local rT={[1] = sandboxed, [2] = sandboxed.."rom"}
+	Disks = {}
+
+	local function getDisks()
+		local Disks = {}
+		for i,v in bPair(oldP.getNames()) do
+			if oldP.getType(v)=="drive" and Perms[v] then
+				local der = {}
+				der[1] = v
+				der[2] = oldP.call(v,"getMountPath")
+				der[3] = "disk"
+				if oFs.exists(sandboxed .. "disk") then
+					local on = 1
+					while true do
+						local on = on + 1
+						if not oFs.exists(sandboxed .. "disk" .. on) then
+							der[3] = "disk" .. on
+							break
+						end 
+					end 
+				end 
+				table.insert(Disks, der)
+			end 
+		end 
+return Disks
+	end 
+
+	local function check(filename)
+		if oSub(filename,1,oLen(sandboxed)+4) == (sandboxed.."rom/" or sandboxed.."rom\\") then return true end
+		for k,v in bPair(rT) do
+			if v==filename then return true end
+		end
+		return false
+	end
+
+	local function isAllowed()
+		return false
+	end
+
+	local function errorout()
+		err("Access denied",3)
+	end
+
+	local function returnResolved(path)
+		if path==nil then return sandboxed end
+		local nPath=oCombine("",path)
+		if (oSub(nPath,1,2)==".." and oLen(nPath)==2) or (oSub(nPath,1,3)=="../") then return nil end
+		local Disks=getDisks()
+		for i,v in bPair(Disks) do
+			if oSub(nPath, 1, oLen(v[3]) + 1) == v[3] .. "/" or nPath == v[3] then
+				return "/" .. v[2] .. "/" .. oSub(nPath, oLen(v[3]) + 2)
+			end 
+		end 
+		return sandboxed..path
+	end
+
+	function peripheral.call(side, method, ...)
+		local tA={...}
+		if not type(side)=="string" then err("Expected string",2) end
+		if not (oldP.isPresent(side) and Perms[side]) or method==nil then return nil end
+		if oldP.getType(side)=="modem" and not oldP.call(side,"isWireless") then
+			--Ugh....
+			if method=="getNamesRemote" then
+				local tFakeNames={}
+				local tNames=oldP.call(side,"getNamesRemote")
+				for k,v in bPair(tNames) do
+					if Perms[v] then tFakeNames[#tFakeNames+1]=v end
+				end
+				return tFakeNames
+			elseif method=="isPresentRemote" then
+				if not type(tA[1])=="string" then err("Expected string",2) end
+				return Perms[tA[1]] and oldP.call(side,"isPresentRemote",tA[1])
+			elseif method=="getTypeRemote" then
+				if not type(tA[1])=="string" then err("Expected string",2) end
+				return Perms[tA[1]] and oldP.call(side,"getTypeRemote",tA[1])
+			elseif method=="getMethodsRemote" then
+				if not type(tA[1])=="string" then err("Expected string",2) end
+				return Perms[tA[1]] and oldP.call(side,"getMethodsRemote",tA[1])
+			elseif method=="callRemote" then
+				if not type(tA[1])=="string" then err("Expected string",2) end
+				return Perms[tA[1]] and oldP.call(side,"callRemote",unpack(tA))
+			end
+		end
+		return oldP.call(side,method,unpack(tA))
+	end
+
+	local newCall=peripheral.call
+
+	function peripheral.getNames()
+		local tResults = {}
+		for n,sSide in oIP( rs.getSides() ) do
+			if oldP.isPresent( sSide ) and Perms[sSide] then
+				table.insert( tResults, sSide )
+				if oldP.getType( sSide ) == "modem" and not oldP.call( sSide, "isWireless" ) then
+					local tRemote = oldP.call( sSide, "getNamesRemote" )
+					for n,sName in oIP( tRemote ) do
+						if Perms[sName] then table.insert( tResults, sName ) end
+					end
+				end
+			end
+		end
+		return tResults
+	end
+	function peripheral.isPresent( _sSide )
+		if oldP.isPresent( _sSide ) and Perms[_sSide] then
+			return true
+		end
+		for n,sSide in oIP( oSides() ) do
+			if Perms[sSide] and oldP.getType( sSide ) == "modem" and not oldP.call( sSide, "isWireless" ) then
+				if oldP.call( sSide, "isPresentRemote", _sSide ) and Perms[_sSide]  then
+					return true
+				end
+			end
+		end
+		return false
+	end
+
+	function peripheral.getType( _sSide )
+		if oldP.isPresent( _sSide ) and Perms[_sSide] then
+			return oldP.getType( _sSide )
+		end
+		for n,sSide in oIP( oSides() ) do
+			if Perms[sSide] and oldP.getType( sSide ) == "modem" and not oldP.call( sSide, "isWireless" ) then
+				if oldP.call( sSide, "isPresentRemote", _sSide ) and Perms[_sSide] then
+					return oldP.call( sSide, "getTypeRemote", _sSide ) 
+				end
+			end
+		end
+		return nil
+	end
+
+	function peripheral.getMethods( _sSide )
+		if oldP.isPresent( _sSide ) and Perms[_sSide] then
+			return oldP.getMethods( _sSide )
+		end
+		for n,sSide in oIP( oSides() ) do
+			if Perms[sSide] and oldP.getType( sSide ) == "modem" and not oldP.call( sSide, "isWireless" ) then
+				if Perms[_sSide] and oldP.call( sSide, "isPresentRemote", _sSide )  then
+					return oldP.call( sSide, "getMethodsRemote", _sSide ) 
+				end
+			end
+		end
+		return nil
+	end
+
+	local newP={}
+	for k,v in pairs(peripheral) do
+		newP[k]=v
+	end
+
+	function peripheral.wrap( _sSide )
+		if newP.isPresent( _sSide ) then
+			local tMethods = newP.getMethods( _sSide )
+			local tResult = {}
+			for n,sMethod in oIP( tMethods ) do
+				tResult[sMethod] = function( ... )
+					return newP.call( _sSide, sMethod, ... )
+				end
+			end
+			return tResult
+		end
+		return nil
+	end
+
+	--[[function peripheral.isPresent(side)
+		if not type(side)=="string" then err("Expected string",2) end
+		if not (side=="top" or side=="bottom" or side=="front" or side=="back" or side=="left" or side=="right" or oldP.isPresent(side)) then
+			err("Invalid side.",2)
+		end
+		if not (oldP.isPresent(side) and Perms[side]) then return false end
+		return oldP.isPresent(side)
+	end
+	--]]
+
+	--[[function peripheral.getType(side)
+		if not type(side)=="string" then err("Expected string",2) end
+		if not (side=="top" or side=="bottom" or side=="front" or side=="back" or side=="left" or side=="right") then
+			err("Invalid side.",2)
+		end
+		if not (oldP.isPresent(side) and Perms[side]) then return nil end
+		return oldP.getType(side)
+	end
+	--]]
+
+	--[[function peripheral.getMethods(side)
+		if not type(side)=="string" then err("Expected string",2) end
+		if not (side=="top" or side=="bottom" or side=="front" or side=="back" or side=="left" or side=="right") then
+			err("Invalid side.",2)
+		end
+		if not (oldP.isPresent(side) and Perms[side]) then return nil end
+		return oldP.getMethods(side)
+	end
+	--]]
+
+	function fs.open(f,v)
+		f=returnResolved(f)
+		if f==nil then return nil end
+		if isAllowed() then return oFs.open(f,v) end
+		if v ~= ("r" or "rb" or nil) then
+			if check(f) then
+				errorout()
+			end
+		end
+		return oFs.open(f,v)
+	end
+
+	function fs.exists(f)
+		f=returnResolved(f)
+		if f==nil then return false end
+		return oFs.exists(f)
+	end
+
+	function fs.isDir(f)
+		f=returnResolved(f)
+		if f==nil then return false end
+		return oFs.isDir(f)
+	end
+
+	function fs.delete(f)
+		f=returnResolved(f)
+		if f==nil then err("Invalid Path",2) return nil end
+		if isAllowed() then return oFs.delete(f) end
+		if check(f) then
+			errorout()
+		end
+		return oFs.delete(f)
+	end
+
+	function fs.copy(f,v)
+		f=returnResolved(f)
+		v=returnResolved(v)
+		if f==nil or v==nil then err("Invalid Path",2) end
+		if isAllowed() then return oFs.copy(f,v) end
+		if check(v) then
+			errorout()
+		end
+		return oFs.copy(f,v)
+	end
+
+	function fs.move(f,v)
+		f=returnResolved(f)
+		v=returnResolved(v)
+		if f==nil or v==nil then err("Invalid Path",2) end
+		if isAllowed() then return oFs.move(f,v) end
+		if check(f) or check(v) then
+			errorout()
+		end
+		return oFs.move(f,v)
+	end
+
+	function fs.isReadOnly(f)
+		f=returnResolved(f)
+		if f==nil then return false end
+		if check(f) then
+			return true
+		end
+		return oFs.isReadOnly(f)
+	end
+
+
+	function fs.list(rawDir)
+		dir=returnResolved(rawDir)
+		if dir==nil then err("Invalid Path",2) end
+		getDisks()
+		local res = oFs.list(dir)
+		if oCombine("", rawDir) == "" then
+			for i,v in bPair(Disks) do
+				table.insert(res, v[3])
+			end 
+		end 
+		return res
+	end
+
+	function fs.getName(file)
+		file=returnResolved(file)
+		if file==nil then err("Invalid Path",2) end
+		if file==sandboxed then return "root" end
+		return oFs.getName(file)
+	end
+
+	function fs.makeDir(dir)
+		dir=returnResolved(dir)
+		if dir==nil then err("Invalid Path",2) end
+		return oFs.makeDir(dir)
+	end
+
+	function fs.getSize(filepath)
+		filepath=returnResolved(filepath)
+		if filepath==nil then err("Invalid Path",2) end
+		return oFs.getSize(filepath)
+	end
+
+	function fs.getDrive(filepath)
+		filepath=returnResolved(filepath)
+		if filepath==nil then err("Invalid Path",2) end
+		if check(filepath) then return "rom" end
+		return oFs.getDrive(filepath)
+	end
+
+	--[[
+	function setfenv(func,...)
+		for k,v in bPair(protectedFuncs) do
+			if v==func then errorout() end
+		end
+		return oldsenv(func,...)
+	end
+
+	function setmetatable(table,...)
+		if table==fs or table==_G then errorout() end
+		return oldmeta(table,...)
+	end
+
+	function rawset(table,...)
+		if table==fs then errorout() end
+		return orset(table,...)
+	end
+	function os.reboot()
+		local writeReboot=oFs.open(".OSRunner/rebootPath","w")
+		writeReboot.write(sandboxed:sub(1,#sandboxed-1))
+		writeReboot.close()
+		oldReboot()
+	end
+	local protectedFuncs={setfenv,setmetatable,rawset,bPair}
+	for k,v in bPair(fs) do
+		table.insert(protectedFuncs,v)
+	end
+	]]
+end
+
+local function restore()
+	_G.fs={}
+	for k,v in bPair(oFs) do
+		_G.fs[k]=v
+	end
+	for k,v in bPair(oldP) do
+		_G.peripheral[k]=v
+	end
+	_G.setfenv=oldsenv
+	_G.os.reboot=oldReboot
+	_G.os.shutdown=oldShutdown
+	_G.setmetatable=oldmeta
+	_G.rawset=orset
+end
+
+--Main program begins here...
+
+
+if not fs.isDir(dir) then local firstTime=true
+	fs.delete(dir) fs.makeDir(dir)
+	term.setBackgroundColor(colors.black)
+	term.setTextColor(colors.white)
+	clear()
+	local mx,my=term.getSize()
+	term.setCursorPos(1, math.floor(my/2))
+	centerPrint("Creating User's Virtual Environment")
+	centerPrint("Please wait...")
+	if printStuff then centerPrint("Creating OS Environment for directory "..dir..".") end
+
+	md("rom")
+	md("rom/programs")
+	md("rom/programs/secret")
+	md("rom/apis")
+	md("rom/help")
+	cp("rom/startup")
+	for k,v in pairs(fs.list("rom/programs")) do
+		cp("rom/programs/"..v)
+	end
+	for k,v in pairs(fs.list("rom/apis")) do
+		cp("rom/apis/"..v)
+	end
+	for k,v in pairs(fs.list("rom/help")) do
+		cp("rom/help/"..v)
+	end
+	if fs.isDir(".System/DefaultUserFiles/") then
+		for k,v in pairs(fs.list("System/DefaultUserFiles")) do
+			cp(".System/DefaultUserFiles/"..v,dir..v)
+		end
+	end
+
+	if urlinstaller then
+		local gI=http.get(urlinstaller)
+		local text=gI.readAll()
+		gI.close()
+		local wI=fs.open(dir..filepath,"w")
+		wI.write(text)
+		wI.close()
+	end 
+
+
+else
+	print("Loading User Environment for user "..OS..".")
+
+end
+
+term.setBackgroundColor(colors.black)
+term.setTextColor(colors.white)
+term.clear()
+term.setCursorPos(1,1)
+
+
+
+if printStuff then write("Running environment for User: \""..OS.."\" in 3")
+	for i=1,2 do
+		sleep(.33)
+		write(".")
+	end
+	sleep(0.33)
+	write("2")
+	for i=1,2 do
+		sleep(.33)
+		write(".")
+	end
+	sleep(0.33)
+	write("1")
+	for i=1,2 do
+		sleep(.33)
+		write(".")
+	end
+	sleep(0.33)
+end
+
+sandbox(dir)
+
+os.shutdown=function()
+	restore()
+	term.setTextColor(colors.white)
+	term.setBackgroundColor(colors.black)
+	term.clear()
+	local mx,my=term.getSize()
+	term.setCursorPos(1, math.floor(my/2))
+	centerPrint("Done loading user, rebooting...")
+	pcall(sleep,1.5)
+	oldReboot()
+end
+
+
+term.setBackgroundColor(colors.black)
+term.setTextColor(colors.white)
+term.clear()
+term.setCursorPos(1,1)
+
+os.run({},"rom/programs/shell")
