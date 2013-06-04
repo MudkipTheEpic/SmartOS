@@ -1,0 +1,63 @@
+local object = {
+  add = function( self, o )
+		return object.new(
+			self.sx + o.sx,
+   self.ex + o.ex,
+			self.sy + o.sy,
+   self.ey + o.ey
+		)
+	end,
+	sub = function( self, o )
+		return object.new(
+			self.sx - o.sx,
+   self.ex - o.ex,
+			self.sy - o.sy,
+   self.ey - o.ey
+		)
+	end,
+	mul = function( self, m )
+		return object.new(
+			self.sx * m,
+   self.ex * m,
+   self.sy * m,
+			self.ey * m
+		)
+ end,
+ isIn = function( self, o )
+   ok = not (self.sx > o.ex) and not (self.ex < o.sx)
+   ok = ok and (not (self.sy > o.ey) and not (self.ey < o.sy))
+   return ok
+	end,
+	dot = function( self, o )
+		return self.sx*o.sx + self.ex*o.ex + self.sy*o.sy + self.ey*o.ey
+	end,
+	area = function( self )
+		return ((ex-sx)+1)*((ey-sy)+1)
+	end,
+	normalize = function( self )
+		return self:mul( 1 / self:area() )
+	end,
+	tostring = function( self )
+		return self.sx..","..self.ex..self.sy..","..self.ey
+	end,
+}
+
+local ometatable = {
+	__index = object,
+	__add = object.add,
+	__sub = object.sub,
+	__mul = object.mul,
+	__unm = function( o ) return o:mul(-1) end,
+	__tostring = object.tostring,
+}
+
+function new( sx, ex, sy, ey )
+	local o = {
+		sx = sx or 0,
+  ex = ex or 0,
+		sy = sy or 0,
+		ey = ey or 0
+	}
+	setmetatable( o, ometatable )
+	return o
+end
